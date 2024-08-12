@@ -1,44 +1,41 @@
 pipeline {
-	agent none
+    agent any
 
-	triggers {
-		pollSCM 'H/10 * * * *'
-	}
+    environment {
+        IMAGE_NAME = "ubuntu/apache2"
+        IMAGE_TAG = "latest"
+    }
 
-	options {
-		disableConcurrentBuilds()
-		buildDiscarder(logRotator(numToKeepStr: '14'))
-	}
+    stages {
+        stage('Checkout') {
+            steps {
+                git branch: 'main', url: 'https://github.com/vidhipal-2/gs-spring-boot-docker.git'
+            }
+        }
 
-	stages {
-		stage("test: baseline (jdk17)") {
-			agent {
-				docker {
-					image 'harbor-repo.vmware.com/dockerhub-proxy-cache/library/adoptopenjdk/openjdk17:latest'
-					args '-v $HOME/.m2:/tmp/jenkins-home/.m2'
-				}
-			}
-			options { timeout(time: 30, unit: 'MINUTES') }
-			steps {
-				sh 'test/run.sh'
-			}
-		}
+        stage('Build') {
+            steps {
+                sh './mvnw clean package'
+            }
+        }
 
-	}
+        stage('Approval') {
+            steps {
+                script {
+                    def userInput = input(id: 'Proceed', message: 'Deploy to Production?', parameters: [choice(choices: ['Yes', 'No'], description: 'Approve deployment?', name: 'approve')])
+                    if (userInput == 'No') {
+                        error 'Deployment aborted by user'
+                    }
+                }
+            }
+        }
 
-	post {
-		changed {
-			script {
-				slackSend(
-						color: (currentBuild.currentResult == 'SUCCESS') ? 'good' : 'danger',
-						channel: '#sagan-content',
-						message: "${currentBuild.fullDisplayName} - `${currentBuild.currentResult}`\n${env.BUILD_URL}")
-				emailext(
-						subject: "[${currentBuild.fullDisplayName}] ${currentBuild.currentResult}",
-						mimeType: 'text/html',
-						recipientProviders: [[$class: 'CulpritsRecipientProvider'], [$class: 'RequesterRecipientProvider']],
-						body: "<a href=\"${env.BUILD_URL}\">${currentBuild.fullDisplayName} is reported as ${currentBuild.currentResult}</a>")
-			}
-		}
-	}
+        stage('Deploy') {
+            steps {
+                sh 'echo "Deploying application..."'
+                // Add your deployment script here, e.g., kubectl apply or helm install
+            }
+        }
+    }
 }
+
